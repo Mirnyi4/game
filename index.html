@@ -1,21 +1,184 @@
-...
-          bushes.forEach((bush, bushIndex) => {
-            const dx = b.x - bush.x;
-            const dy = b.y - bush.y;
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Battle of Flags</title>
+  <style>
+    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #111; color: white; }
+    #setup, #gameCanvas, #timer, #scoreboard { display: none; }
+    #setup.active, #gameCanvas.active, #timer.active, #scoreboard.active { display: block; }
+    #setup { padding: 20px; }
+    .flag-upload { margin: 10px 0; }
+    #timer { position: absolute; top: 10px; left: 10px; font-size: 24px; background: rgba(0,0,0,0.6); padding: 5px 10px; border-radius: 8px; }
+    #scoreboard { position: absolute; top: 10px; right: 10px; font-size: 16px; background: rgba(0,0,0,0.6); padding: 5px 10px; border-radius: 8px; text-align: right; }
+  </style>
+</head>
+<body>
+  <div id="setup" class="active">
+    <h2>Выберите количество сторон:</h2>
+    <select id="sides">
+      <option value="2">2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+    </select>
+    <div id="flagInputs"></div>
+    <button id="startGame">Запустить игру</button>
+  </div>
+
+  <div id="timer">Осталось: 30:00</div>
+  <div id="scoreboard"></div>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const sidesSelect = document.getElementById('sides');
+    const flagInputs = document.getElementById('flagInputs');
+    const startBtn = document.getElementById('startGame');
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const timerEl = document.getElementById('timer');
+    const scoreboard = document.getElementById('scoreboard');
+
+    let flags = [];
+    let balls = [];
+    let gameStarted = false;
+    let endTime = null;
+
+    sidesSelect.addEventListener('change', updateFlagInputs);
+
+    function updateFlagInputs() {
+      flagInputs.innerHTML = '';
+      const count = parseInt(sidesSelect.value);
+      for (let i = 0; i < count; i++) {
+        const label = document.createElement('label');
+        label.textContent = `Флаг для стороны ${i+1}`;
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.className = 'flag-upload';
+        input.dataset.index = i;
+        flagInputs.appendChild(label);
+        flagInputs.appendChild(input);
+        flagInputs.appendChild(document.createElement('br'));
+      }
+    }
+
+    startBtn.addEventListener('click', () => {
+      const count = parseInt(sidesSelect.value);
+      const inputs = flagInputs.querySelectorAll('input');
+      flags = [];
+      let loaded = 0;
+
+      inputs.forEach(input => {
+        const file = input.files[0];
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            flags.push(img);
+            loaded++;
+            if (loaded === count) startBattle();
+          };
+          img.src = e.target.result;
+        };
+        if (file) reader.readAsDataURL(file);
+      });
+    });
+
+    function startBattle() {
+      document.getElementById('setup').classList.remove('active');
+      canvas.classList.add('active');
+      timerEl.classList.add('active');
+      scoreboard.classList.add('active');
+      gameStarted = true;
+
+      const colors = ['#e74c3c','#3498db','#2ecc71','#f1c40f'];
+      const w = canvas.width;
+      const h = canvas.height;
+
+      balls = flags.map((flag, i) => ({
+        x: Math.random()*w,
+        y: Math.random()*h,
+        dx: (Math.random() - 0.5) * 2,
+        dy: (Math.random() - 0.5) * 2,
+        size: 30,
+        flag: flag,
+        color: colors[i % colors.length],
+        team: i,
+        animating: false,
+        animationProgress: 0
+      }));
+
+      endTime = Date.now() + 30 * 60 * 1000;
+      requestAnimationFrame(gameLoop);
+    }
+
+    function gameLoop() {
+      if (!gameStarted) return;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const teamCounts = Array(flags.length).fill(0);
+
+      for (let i = balls.length - 1; i >= 0; i--) {
+        const b = balls[i];
+
+        if (!b.animating) {
+          b.x += b.dx;
+          b.y += b.dy;
+
+          if (b.x < 0 || b.x > canvas.width) b.dx *= -1;
+          if (b.y < 0 || b.y > canvas.height) b.dy *= -1;
+
+          for (let j = balls.length - 1; j >= 0; j--) {
+            if (i === j) continue;
+            const a = balls[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
             const dist = Math.sqrt(dx*dx + dy*dy);
-            if (dist < bush.r && b.size > 40) {
-              for (let k = 0; k < 6; k++) {
-                balls.push({
-                  x: b.x, y: b.y,
-                  dx: (Math.random() - 0.5) * 2,
-                  dy: (Math.random() - 0.5) * 2,
-                  size: 10,
-                  flag: b.flag, color: b.color, team: b.team,
-                  animating: false, animationProgress: 0
-                });
-              }
-              bushes.splice(bushIndex, 1);
-              balls.splice(i, 1);
+            if (dist < b.size && b.size > a.size * 1.1 && b.team !== a.team) {
+              a.animating = true;
+              a.animationProgress = 0;
+              a.target = b;
             }
-          });
-...
+          }
+        } else {
+          b.animationProgress += 0.05;
+          if (b.animationProgress >= 1) {
+            b.target.size += b.size * 0.3;
+            balls.splice(i, 1);
+            continue;
+          }
+          b.x += (b.target.x - b.x) * 0.1;
+          b.y += (b.target.y - b.y) * 0.1;
+        }
+
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
+        ctx.fillStyle = b.color;
+        ctx.fill();
+        ctx.closePath();
+        ctx.drawImage(b.flag, b.x - b.size/2, b.y - b.size/2, b.size, b.size);
+
+        teamCounts[b.team]++;
+      }
+
+      // Обновление таймера
+      const remaining = Math.max(0, endTime - Date.now());
+      const min = Math.floor(remaining / 60000);
+      const sec = Math.floor((remaining % 60000) / 1000);
+      timerEl.textContent = `Осталось: ${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+
+      // Обновление счётчика
+      scoreboard.innerHTML = teamCounts.map((count, i) => `Сторона ${i+1}: ${count}`).join('<br>');
+
+      if (remaining <= 0) {
+        gameStarted = false;
+        timerEl.textContent = "Время вышло!";
+      } else {
+        requestAnimationFrame(gameLoop);
+      }
+    }
+
+    updateFlagInputs();
+  </script>
+</body>
+</html>
